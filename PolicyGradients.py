@@ -4,23 +4,23 @@ import numpy as np
 import tensorflow as tf
 from time import sleep
 
-seed(69)
-np.random.seed(69)
+seed(313)
+np.random.seed(313)
 
 def createGraph():
     graph = Graph()
     graph.addNodes([Node(index) for index in range(10)])
     nodes = graph._nodes
-    graph.addEdges([Edge(nodes[source], nodes[destination]) for [source, destination] in [sample(range(10), 2) for _ in range(40)]]) 
+    graph.addEdges([Edge(nodes[source], nodes[destination]) for [source, destination] in [sample(range(10), 2) for _ in range(20)]]) 
     return graph
 
 def startEpisode(graph): return tuple(sample(graph._nodes, 2))
 def convertState(state): return [int(state[0].__name__), int(state[1].__name__)]
 
 def processRewards(rewards, gamma = 0.95):
-	for iteration in range(rewards.__len__()):
-		rewards[iteration] = sum(list(map(lambda x: x[1]*(gamma**x[0]), enumerate(rewards[iteration:]))))
-	return rewards
+    for iteration in range(rewards.__len__()):
+        rewards[iteration] = sum(list(map(lambda x: x[1]*(gamma**x[0]), enumerate(rewards[iteration:]))))
+    return rewards
 
 def createNetwork(learning_rate, action_size):
 	input_ = tf.placeholder(tf.float32, [None, 2], name = 'input')
@@ -52,15 +52,18 @@ def trainPolicyNetwork():
     loss = tf.reduce_mean(neg_loss_prob * discounted_rewards)
     train_opt = tf.train.AdamOptimizer(learning_rate).minimize(loss)
     epoch_reward = 0
+    epoch_rewards = []
     with tf.Session() as Sess:
         Sess.run(tf.global_variables_initializer())
-        for episode in range(1000000):
+        for episode in range(100000):
             state = startState
             total_reward = 0
             episode_states = []
             episode_rewards = []
             episode_actions = []
+            accumulator = 0
             while True:
+                accumulator += 1
                 action_probability_distribution = Sess.run(action_distribution, feed_dict = {input_: np.array(convertState(state)).reshape(1,2)})
                 actions = graph.getActions(state)
                 index = int(np.random.choice(list(range(maximumActions)),1,p = action_probability_distribution.ravel()))
@@ -79,19 +82,22 @@ def trainPolicyNetwork():
                 total_reward += reward
                 epoch_reward += reward
                 try:
-                        if graph.terminate(action, state):
+                        if graph.terminate(action, state) or accumulator > 10:
                                 discounted = processRewards(episode_rewards)
                                 _loss, _ = Sess.run([loss, train_opt], feed_dict = {input_: np.array(episode_states), _actions: np.array(episode_actions), discounted_rewards: np.array(discounted)})
                                 break	
                 except: continue
-            if episode % 10000 == 0: 
-                print('Percentage Done: ', episode/1000000, '%')
+            if episode % 1000 == 0 and episode != 0: 
+                epoch_rewards.append(epoch_reward)
+                print('Percentage Done: ', episode/100000, '%')
                 print('Epoch Reward: ', epoch_reward)
                 epoch_reward = 0
-            if episode > 1000000 - 10: print(total_reward) 
+            if all(x == max(epoch_rewards) for x in epoch_rewards[-5:]) and len(epoch_rewards) > 5: 
+                print('Maximum Reward Consistently Reached')
+                break
+        action_probability_distribution = Sess.run(action_distribution, feed_dict = {input_: np.array(convertState(startState)).reshape(1,2)})
+        print('Actions:', action_probability_distribution)
         print(startState)
         print([node.neighbours for node in graph._nodes])
                 
-
-
 trainPolicyNetwork()
